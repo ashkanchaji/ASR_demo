@@ -1,0 +1,7 @@
+# Runtime only. Nothing here pulls torch or transformers -- weight conversion is a
+# separate, one-time job (requirements-convert.txt) and never happens at serving time.
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-multipart>=0.0.20
+python-dotenv>=1.0
+faster-whisper>=1.1.1

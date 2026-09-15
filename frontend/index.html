@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speak to me</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1117; --card: #171a23; --text: #eef1f7; --muted: #9aa3b5;
+    --idle: #3b82f6; --live: #ef4444; --busy: #f59e0b; --ok: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 28px; padding: 32px 20px;
+    background: var(--bg); color: var(--text);
+    /* Vazirmatn first: it carries correct Persian glyphs and still has full Latin. */
+    font-family: Vazirmatn, "Noto Sans Arabic", "Segoe UI", system-ui, sans-serif;
+  }
+  h1 { font-size: 1.35rem; font-weight: 600; margin: 0; text-align: center; }
+
+  .mic-wrap { position: relative; display: grid; place-items: center; width: 220px; height: 220px; }
+  #ring {
+    position: absolute; width: 168px; height: 168px; border-radius: 50%;
+    border: 3px solid var(--idle); opacity: .35; transition: border-color .2s;
+  }
+  #mic {
+    position: relative; width: 168px; height: 168px; border-radius: 50%; border: none;
+    background: var(--idle); color: #fff; font: inherit; font-size: 1.05rem; font-weight: 600;
+    cursor: pointer; display: grid; place-items: center; gap: 8px;
+    transition: background .2s, transform .1s;
+  }
+  #mic:active { transform: scale(.97); }
+  #mic:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+  #mic svg { width: 44px; height: 44px; fill: currentColor; }
+
+  body[data-state="listening"] #mic { background: var(--live); }
+  body[data-state="listening"] #ring { border-color: var(--live); animation: pulse 1.4s ease-out infinite; }
+  body[data-state="processing"] #mic { background: var(--busy); cursor: default; }
+  body[data-state="processing"] #ring { border-color: var(--busy); animation: pulse 1.4s ease-out infinite; }
+  @keyframes pulse { 0% { transform: scale(1); opacity: .55 } 100% { transform: scale(1.35); opacity: 0 } }
+  @media (prefers-reduced-motion: reduce) { #ring { animation: none !important; transition: none } }
+
+  #status { color: var(--muted); min-height: 1.4em; text-align: center; }
+  #stop {
+    background: none; border: 1px solid var(--muted); color: var(--muted);
+    border-radius: 999px; padding: 8px 20px; font: inherit; cursor: pointer;
+  }
+
+  .card {
+    width: min(560px, 100%); background: var(--card); border-radius: 16px;
+    padding: 22px 24px; line-height: 1.65;
+  }
+  #transcript { font-size: 1.3rem; }
+  #meta { margin-top: 14px; color: var(--muted); font-size: .85rem; }
+  #error { border-left: 4px solid var(--live); }
+  #syncError { margin-top: 8px; color: var(--busy); font-size: .85rem; }
+  #navNote { margin-top: 8px; font-size: .85rem; }
+  #navNote[data-kind="ok"] { color: var(--ok); }
+  #navNote[data-kind="warn"] { color: var(--busy); }
+
+  .controls {
+    width: min(560px, 100%); display: flex; flex-wrap: wrap; justify-content: center;
+    gap: 10px 18px; color: var(--muted); font-size: .9rem;
+  }
+  .controls label { display: flex; align-items: center; gap: 8px; }
+  .controls select {
+    background: var(--card); color: var(--text); border: 1px solid #2b3040;
+    border-radius: 8px; padding: 6px 8px; font: inherit; font-size: .9rem; max-width: 14rem;
+  }
+  .controls input { width: 18px; height: 18px; accent-color: var(--idle); }
+  .controls :focus-visible { outline: 2px solid var(--idle); outline-offset: 2px; }
+  .switch:has(:checked) { color: var(--ok); }
+
+  .examples { width: min(560px, 100%); color: var(--muted); font-size: .9rem; }
+  .examples p { margin: 0 0 8px; }
+  .examples li { margin-bottom: 6px; }
+  .examples ul { margin: 0; padding-inline-start: 20px; list-style: none; }
+  .examples li::before { content: "“"; }
+  .examples li::after { content: "”"; }
+  .fa { direction: rtl; text-align: right; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body data-state="idle">
+
+<h1>Press the button and say something</h1>
+
+<div class="controls">
+  <label class="switch">
+    <input type="checkbox" id="wake">
+    <span>Always listening for &ldquo;hey PUM&rdquo;</span>
+  </label>
+  <label>Persian model <select id="faModel"></select></label>
+  <label>English model <select id="enModel"></select></label>
+  <label>Language
+    <select id="lang">
+      <option value="auto">Detect it</option>
+      <option value="fa">Persian</option>
+      <option value="en">English</option>
+    </select>
+  </label>
+</div>
+
+<div class="mic-wrap">
+  <div id="ring"></div>
+  <button id="mic" aria-label="Start listening">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V22h2v-3.1A7 7 0 0 0 19 12h-2z"/></svg>
+    <span id="label">Tap to speak</span>
+  </button>
+</div>
+
+<p id="status" role="status" aria-live="polite">Persian and English both work.</p>
+<button id="stop" hidden>I'm done</button>
+
+<div class="card" id="result" hidden>
+  <!-- dir=auto applies the Unicode first-strong rule: Persian goes RTL,
+       English LTR, and mixed strings follow whichever opens the sentence. -->
+  <div id="transcript" dir="auto"></div>
+  <div id="meta"></div>
+  <div id="navNote" hidden></div>
+  <div id="syncError" hidden></div>
+</div>
+
+<div class="card" id="error" role="alert" hidden></div>
+
+<div class="examples">
+  <p>Things you could try:</p>
+  <ul>
+    <li>show me the settings page</li>
+    <li class="fa" lang="fa">صفحه تنظیمات رو نشون بده</li>
+    <li>open my profile</li>
+    <li class="fa" lang="fa">گزارش فروش ماه گذشته رو باز کن</li>
+  </ul>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const mic = document.getElementById("mic");
+const ring = $("#ring"), statusEl = $("#status"), label = $("#label");
+const result = $("#result"), transcript = $("#transcript"), meta = $("#meta"), syncError = $("#syncError");
+const navNote = $("#navNote");
+const errorBox = $("#error"), stopBtn = $("#stop");
+const wakeBox = $("#wake"), faModelSel = $("#faModel"), enModelSel = $("#enModel"), langSel = $("#lang");
+
+const SILENCE_MS = 1500;    // hush this long after speech ends -> we stop for you
+const MAX_MS = 5000;       // hard cap, in case the room never goes quiet
+const WAKE_COMMAND_MS = 5000;  // hard cap on the clip right after "hey PUM", talking or not
+const WAKE_SILENCE_MS = 1500;  // that same clip stops sooner on a shorter pause than SILENCE_MS
+const MIN_RMS = 0.012;      // floor under the adaptive threshold
+const CALIBRATE_MS = 300;   // opening window used to measure the room
+const IDLE_MS = 4000;       // always-on: dead silence this long -> recycle the clip
+
+const COPY = {
+  idle: "Persian and English both work.",
+  listening: "Listening… I'll stop on my own when you pause.",
+  processing: "One moment…",
+  wake: "Always on. Say “hey PUM” when you want me.",
+  awake: "Yes? Go ahead.",
+};
+const ERRORS = {
+  mic: "I can't reach your microphone. Please allow microphone access in your browser, then try again.",
+  no_speech: "I didn't catch that. Tap the button and start speaking right away.",
+  network: "Something went wrong on our side. Please try again in a moment.",
+};
+const LANGUAGES = { fa: "Persian", en: "English" };  // the server returns nothing else
+
+// armed = waiting to hear the name; cleared once woken, so the clip after the
+// wake word is taken as the command whether or not the name is repeated.
+let state = "idle", armed = true, sawSpeech = false;
+let recorder, chunks = [], stream, audioCtx, raf;
+let controller = null;  // AbortController of the request still being "thought" over
+
+function setState(next) {
+  state = next;
+  document.body.dataset.state = next;
+  const waking = wakeBox.checked && next !== "processing";
+  statusEl.textContent = waking ? (armed ? COPY.wake : COPY.awake) : (COPY[next] ?? COPY.idle);
+  label.textContent = next === "processing" ? "Thinking"
+    : next === "listening" ? (waking && armed ? "Listening for PUM" : "Listening")
+    : waking ? "Always on" : "Tap to speak";
+  stopBtn.hidden = next !== "listening" || wakeBox.checked;
+}
+
+function show(el, html) {
+  result.hidden = errorBox.hidden = true;
+  if (el) { el.hidden = false; if (html) el.innerHTML = html; }
+}
+
+function fail(kind) {
+  cleanup();
+  setState("idle");
+  show(errorBox);
+  errorBox.textContent = ERRORS[kind] ?? ERRORS.network;
+}
+
+function cleanup() {
+  cancelAnimationFrame(raf);
+  mic.style.transform = "";
+  audioCtx?.close().catch(() => {});
+  audioCtx = null;
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null;
+}
+
+// Energy-threshold VAD. A library would buy speech/non-speech classification we
+// don't need here -- the server runs a real VAD; this only decides when to stop.
+function watchLevel(src) {
+  audioCtx = new AudioContext();
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 1024;
+  audioCtx.createMediaStreamSource(src).connect(analyser);
+  const buf = new Float32Array(analyser.fftSize);
+
+  const t0 = performance.now();
+  sawSpeech = false;
+  let floorSum = 0, floorN = 0, heardSpeech = false, lastLoud = 0;
+  // armed is false only for the clip right after "hey PUM" -- the command
+  // itself: a hard 3s cap regardless of continued speech, and it stops on a
+  // shorter pause too, instead of the general-purpose 15s/1.5s pair.
+  const isCommand = wakeBox.checked && !armed;
+  const maxMs = isCommand ? WAKE_COMMAND_MS : MAX_MS;
+  const silenceMs = isCommand ? WAKE_SILENCE_MS : SILENCE_MS;
+
+  (function tick() {
+    raf = requestAnimationFrame(tick);
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    const rms = Math.sqrt(sum / buf.length);
+    const now = performance.now();
+
+    // Calibrate against the actual room. A fan, an open window or a cheap laptop
+    // mic all sit well above the silence a fixed threshold assumes.
+    if (now - t0 < CALIBRATE_MS) { floorSum += rms; floorN++; return; }
+    const threshold = Math.max(MIN_RMS, (floorSum / Math.max(floorN, 1)) * 3);
+
+    mic.style.transform = `scale(${1 + Math.min(rms * 3, 0.12)})`;  // live level
+
+    if (rms > threshold) { heardSpeech = true; sawSpeech = true; lastLoud = now; }
+    if (heardSpeech && now - lastLoud > silenceMs) stop();
+    // Always-on cuts a quiet clip short: 15s of room tone is 15s of nothing to
+    // transcribe, and the loop wants to be back at the microphone sooner.
+    else if (now - t0 > maxMs || (wakeBox.checked && !heardSpeech && now - t0 > IDLE_MS)) stop();
+  })();
+}
+
+const MIME = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm", "audio/mp4"]
+  .find((t) => window.MediaRecorder?.isTypeSupported(t));
+
+async function start() {
+  if (state !== "idle") return;
+  if (!window.MediaRecorder || !navigator.mediaDevices) return fail("mic");
+  // Always-on re-arms every couple of hundred ms; blanking the card each time
+  // would flash the transcript off screen before anyone read it.
+  if (wakeBox.checked) errorBox.hidden = true;
+  else show(null);
+  setState("listening");
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    return fail("mic");
+  }
+  chunks = [];
+  recorder = new MediaRecorder(stream, MIME ? { mimeType: MIME } : {});
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  recorder.onstop = send;
+  recorder.start();
+  watchLevel(stream);
+}
+
+function stop() {
+  if (state !== "listening") return;
+  setState("processing");
+  cancelAnimationFrame(raf);
+  if (recorder?.state === "recording") recorder.stop();  // fires send()
+  else if (wakeBox.checked) next();
+  else fail("no_speech");
+}
+
+// Always-on is a loop of ordinary push-to-talk clips: the browser VAD cuts each
+// one and the server decides whether the name was at the front of it.
+// ponytail: that means one full Whisper pass per clip, so always-on wants the
+// small model on CPU. A dedicated wake-word model is the upgrade if it stops
+// keeping up.
+function next() {
+  setState("idle");
+  if (wakeBox.checked) setTimeout(start, 200);
+}
+
+// Turning always-on off mid-clip throws the clip away rather than transcribing it.
+function abort() {
+  cancelAnimationFrame(raf);
+  if (recorder?.state === "recording") { recorder.onstop = null; recorder.stop(); }
+  cleanup();
+  setState("idle");
+}
+
+// Not-VAD reprompt: clicking the mic again while we're still "thinking" drops
+// whatever was in flight (the backend stops decoding it too -- see
+// do_transcribe()'s is_disconnected() check) and starts a fresh capture.
+function reprompt() {
+  controller?.abort();
+  setState("idle");
+  start();
+}
+
+// Wake mode's escape hatch for a stuck "thinking": drop the in-flight
+// transcribe and go back to listening for "hey PUM" (not straight into
+// command capture -- whatever woke us is exactly what we're abandoning).
+function wakeReprompt() {
+  controller?.abort();
+  armed = true;
+  next();
+}
+
+async function send() {
+  const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+  const wasArmed = armed;
+  cleanup();
+  // Nothing rose above the room floor -- skip the round trip entirely.
+  if (wakeBox.checked && !sawSpeech) return next();
+
+  controller?.abort();
+  const mine = controller = new AbortController();
+  // Wake mode goes quiet (no mic, no VAD) for the length of this request --
+  // it must not hear a new "hey PUM" while this clip is still being
+  // transcribed. setState("processing") is the same busy UI as push-to-talk:
+  // mic goes amber, status says "One moment...".
+  if (wakeBox.checked) setState("processing");
+
+  const body = new FormData();
+  body.append("audio", blob, "clip.webm");
+  // Sticky slot picks -- see set_active_model() server-side -- so these are
+  // sent every time, not just when changed; an unchanged value is a no-op there.
+  body.append("fa_model", faModelSel.value);
+  body.append("en_model", enModelSel.value);
+  body.append("language", langSel.value);
+  if (wakeBox.checked) body.append("wake", String(wasArmed));
+  try {
+    const res = await fetch("/transcribe", { method: "POST", body, signal: mine.signal });
+    if (mine !== controller) return;  // a newer clip already took over
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // A clip with nothing in it is routine when the mic never stops; the
+      // always-on loop swallows it instead of putting an error on screen.
+      if (wakeBox.checked && data.detail === "no_speech") return next();
+      fail(data.detail === "no_speech" ? "no_speech" : "network");
+      if (wakeBox.checked) next();  // resume listening once the error is shown
+      return;
+    }
+    if (wakeBox.checked) {
+      if (wasArmed && !data.woken) return next();          // not addressed to us
+      if (!data.text) { armed = false; return next(); }    // "hey PUM" and a pause
+      armed = true;
+      render(data);
+      return next();  // resume listening only now that the answer is in
+    }
+    setState("idle");
+    render(data);
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      fail("network");
+      if (wakeBox.checked) next();
+    }
+  }
+}
+
+function render(d) {
+  show(result);
+  transcript.textContent = d.text;
+  transcript.lang = d.detected_language;
+  const language = LANGUAGES[d.detected_language] ?? d.detected_language;
+  meta.textContent = `${language} · heard in ${(d.processing_time_ms / 1000).toFixed(1)}s`;
+
+  syncError.hidden = !d.external_error;
+  syncError.textContent = d.external_error ? "Couldn't reach the other device on your network." : "";
+
+  // nav_* comes from the paired PC's own response -- status=ok carries a url,
+  // anything else carries a human-readable message already meant for a user.
+  navNote.hidden = true;
+  if (d.nav_status === "ok" && d.nav_url) {
+    navNote.hidden = false;
+    navNote.dataset.kind = "ok";
+    navNote.textContent = d.nav_url;
+  } else if (d.nav_message) {
+    navNote.hidden = false;
+    navNote.dataset.kind = "warn";
+    navNote.textContent = d.nav_message;
+  }
+}
+
+mic.addEventListener("click", () => {
+  if (state === "listening") return stop();
+  if (state === "processing") return wakeBox.checked ? wakeReprompt() : reprompt();
+  start();
+});
+stopBtn.addEventListener("click", stop);
+
+wakeBox.addEventListener("change", () => {
+  armed = true;
+  if (!wakeBox.checked && state === "listening") abort();
+  else if (wakeBox.checked && state === "idle") start();
+  else setState(state);
+});
+
+// The per-language model lists and the active pair are the server's, not a
+// copy of .env kept here. new Option() escapes the names for us; they come
+// off a filesystem. Picking one is a sticky slot swap (see set_active_model()
+// server-side), not a per-clip override.
+fetch("/health").then((r) => r.json()).then((h) => {
+  for (const m of h.fa_models)
+    faModelSel.add(new Option(m.replace(/^whisper-|-ct2$/g, ""), m, false, m === h.models.fa));
+  for (const m of h.en_models)
+    enModelSel.add(new Option(m.replace(/^whisper-|-ct2$/g, ""), m, false, m === h.models.en));
+  langSel.value = h.language;
+}).catch(() => {});
+
+setState("idle");
+</script>
+</body>
+</html>

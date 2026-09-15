@@ -1,0 +1,12 @@
+{
+  "fa": ["پاسارگاد","داشبورد", "تنظیمات", "پروفایل", "جستجو", "چاه", "سپهر", "جفیر", "پنل", "خانه", "ماژول",
+   "تنظیمات", "صفحه", "برو", "بروزرسانی", "مدیریت", "کاربر", "ورود", "خروج", "ثبت‌نام", "پشتیبانی", "راهنما",
+    "گزارش", "آمار", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه", "ده"
+  ],
+  "en": [
+  "pasargad", "dashboard", "settings", "profile", "search", "well", "sepehr", "jafir",
+  "panel", "home", "module", "settings", "page", "go", "update", "management",
+  "user", "login", "logout", "register", "support", "help", "report", "statistics",
+  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"
+  ]
+}

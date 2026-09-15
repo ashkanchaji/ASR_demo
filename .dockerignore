@@ -1,0 +1,9 @@
+# The image gets its model from the converter stage, not from the build context.
+models/
+.venv/
+.venv-convert/
+.env
+__pycache__/
+**/__pycache__/
+.git/
+*.md

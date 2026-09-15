@@ -1,0 +1,19 @@
+# One-time weight conversion only. Never installed into the service venv or the
+# image: torch and transformers are build-time tools here, and the runtime is
+# faster-whisper on an already-converted CTranslate2 directory.
+#
+#   uv venv --python 3.12 .venv-convert
+#   VIRTUAL_ENV=$PWD/.venv-convert uv pip install -r requirements-convert.txt
+#
+# Needed again because the Persian fine-tune (steja/whisper-small-persian) is
+# published as PyTorch weights only. The official Systran/faster-whisper-* sizes
+# are pre-converted and must NOT be run through this -- see README.
+
+# CPU build. Conversion reads the weights and writes int8; it never trains, so a
+# CUDA torch here would be ~2.5 GB of wheels doing nothing.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.0+cpu
+transformers==4.57.6
+# Must match the runtime ctranslate2 in backend/requirements.txt's faster-whisper:
+# the converter writes a binary format the runtime has to be able to read.
+ctranslate2==4.8.2

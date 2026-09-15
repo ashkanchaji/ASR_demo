@@ -1,0 +1,17 @@
+.venv/
+.venv-convert/
+__pycache__/
+*.wav
+
+# Multi-GB converted weights. Rebuild with the scripts/convert_*.sh / fetch_*.sh scripts.
+models/
+
+# Real config; .env.example is the documented one.
+.env
+
+# Local Claude Code project settings, not shared repo config.
+.claude/
+
+# Recorded clips from WHISPER_SAVE_CLIPS=1 -- real voice audio, debug-only, no rotation.
+eval/samples/*.webm
+eval/samples/*.wav
