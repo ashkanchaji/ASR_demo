@@ -8,10 +8,18 @@ models/
 
 # Real config; .env.example is the documented one.
 .env
+.env.*
+!.env.example
 
 # Local Claude Code project settings, not shared repo config.
 .claude/
 
 # Recorded clips from WHISPER_SAVE_CLIPS=1 -- real voice audio, debug-only, no rotation.
-eval/samples/*.webm
-eval/samples/*.wav
+eval/samples/
+
+# Local assistant state and Graphify caches.
+.codex/
+.agents/
+graphify-out/*
+!graphify-out/graph.json
+!graphify-out/GRAPH_REPORT.md

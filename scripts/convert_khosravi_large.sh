@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # One-time: convert MohammadKhosravi/whisper-large-v3-Persian to CTranslate2 int8.
 #
-# COMPARISON MODEL, not a vetted default -- see CLAUDE.md. Full fine-tune of
-# large-v3 on Common Voice 11 fa only (WER 26.87 on that set per the model card,
-# no English numbers at all). Full fine-tune tuned solely on Persian data is the
-# highest-risk profile here for wrecking English -- check that before using it
-# for anything beyond side-by-side comparison.
+# Default Persian transcription model; use a stock model for language ID.
+# This Persian-only fine-tune belongs in the fa slot, not the English slot
+# or detector. See README.md for model preparation and role separation.
 #
 #   uv venv --python 3.12 .venv-convert
 #   VIRTUAL_ENV=$PWD/.venv-convert uv pip install -r requirements-convert.txt

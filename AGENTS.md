@@ -34,7 +34,7 @@ Do not add a second *inference engine* here — that was tried (a LoRA fine-tune
 a new engine is architecture. Re-justify the latter from scratch before resurrecting it.
 
 This directory is self-contained. It sits inside a larger `PUM/` tree that has its own
-`.venv`, `CLAUDE.md` and `.claude/`; **none of that applies here.** Use this folder's `.venv`
+`.venv`, `AGENTS.md` and `.claude/`; **none of that applies here.** Use this folder's `.venv`
 and nothing above it.
 
 ## Layout
@@ -66,7 +66,7 @@ and nothing above it.
 ./scripts/fetch_model.sh tiny        # once -- wake-word probe default, official Systran
 ./scripts/convert_model.sh        # once -- small-persian, alternate fa/en pick
 ./scripts/convert_large_turbo.sh  # once -- large-v3-turbo, alternate pick
-./scripts/fetch_amirmohseni.sh       # once -- comparison only, see CLAUDE.md
+./scripts/fetch_amirmohseni.sh       # once -- comparison only, see AGENTS.md
 ./run.sh                          # http://127.0.0.1:8000
 ./run.sh --selfcheck              # end-to-end smoke check
 docker build -t voice-demo . && docker run --rm -p 8000:8000 voice-demo

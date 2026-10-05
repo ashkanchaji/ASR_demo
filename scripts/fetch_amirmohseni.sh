@@ -3,7 +3,7 @@
 # CTranslate2 int8 directory (model.bin + tokenizer.json), so this is a plain
 # fetch, same shape as fetch_model.sh -- no conversion step.
 #
-# COMPARISON MODEL, not a vetted default -- see CLAUDE.md. Third-hand: a
+# COMPARISON MODEL, not a vetted default -- see AGENTS.md. Third-hand: a
 # fine-tune (MohammadGholizadeh) reworked (AmirMohseni's bf16) then converted
 # here by a third individual, empty README, no WER/CER or English numbers
 # published anywhere in that chain. This is the "third-party mirror,

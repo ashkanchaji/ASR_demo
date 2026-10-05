@@ -13,7 +13,7 @@ import io
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -271,7 +271,31 @@ def clip() -> bytes:
     ).stdout
 
 
+def check_transcripts_stay_local() -> None:
+    """Both capture modes return transcripts without an outbound connection."""
+    client = TestClient(main.app)
+    audio = {"audio": ("clip.webm", b"x" * main.MIN_CLIP_BYTES, "audio/webm")}
+    with patch("socket.socket.connect", side_effect=AssertionError("outbound connection")), \
+         patch.object(main, "decode_audio", return_value=object()), \
+         patch.object(main, "do_transcribe", new_callable=AsyncMock) as transcribe, \
+         patch.object(main, "pick_model_and_language", new_callable=AsyncMock) as route:
+        for language in ("en", "fa", "auto"):
+            for wake in (False, True):
+                text = "hey PUM open settings" if wake else "open settings"
+                transcribe.return_value = text
+                route.return_value = (main.EN_MODEL, "en", text, {"fa": 0.1, "en": 0.9})
+                response = client.post("/transcribe", files=audio,
+                                       data={"language": language, "wake": str(wake).lower()})
+                assert response.status_code == 200, response.text
+                body = response.json()
+                assert body["text"] == "open settings", body
+                assert not any(key.startswith("nav_") or key == "external_error" for key in body), body
+                if wake:
+                    assert body["woken"] is True, body
+
+
 def run() -> None:
+    check_transcripts_stay_local()
     check_language_is_closed()
     check_wake_word()
     check_runtime_switches()
@@ -298,18 +322,18 @@ def run() -> None:
     r = client.post("/transcribe", files={"audio": ("clip.webm", tone, "audio/webm")})
     assert r.status_code in (200, 422), r.text
     if r.status_code == 200:
-        assert r.json()["detected_language"] in main.LANGUAGES
+        body = r.json()
+        assert body["detected_language"] in main.LANGUAGES
+        assert body["detector"] == Path(main._active["detect"]).name, body
+        assert set(body["language_probs"]) == set(main.LANGUAGES), body
 
     # Wake mode: a clip nobody addressed to us is a 200 the UI can ignore, not
     # an error. A tone has no wake word in it by construction.
     r = client.post("/transcribe", files={"audio": ("clip.webm", tone, "audio/webm")},
                     data={"wake": "true"})
     assert r.status_code == 200 and r.json()["woken"] is False, r.text
-    # Same response carries the routing evidence, because this went through the
-    # auto-detect path. Absent it, a misroute is invisible again.
-    body = r.json()
-    assert body["detector"] == Path(main._active["detect"]).name, body
-    assert set(body["language_probs"]) == set(main.LANGUAGES), body
+    # A rejected wake probe exits before language detection runs.
+    assert "detector" not in r.json() and "language_probs" not in r.json(), r.text
 
     # A forced language never consults the detector, so it must NOT claim to have.
     r = client.post("/transcribe", files={"audio": ("clip.webm", tone, "audio/webm")},

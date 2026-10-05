@@ -2,7 +2,6 @@
 # libcublas.so.12, and /opt/cuda here has cuBLAS 13 and no cuDNN at all, so the
 # wheels supply them and run.sh puts them on LD_LIBRARY_PATH.
 #
-# The Docker image does NOT install these: its CUDA base image already carries
-# both on the default loader path, and these wheels would add ~1.5 GB for nothing.
+# The Docker image is CPU-only and does not install these wheels.
 nvidia-cublas-cu12>=12.4
 nvidia-cudnn-cu12>=9.1,<10

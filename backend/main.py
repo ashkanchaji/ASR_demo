@@ -18,15 +18,12 @@ ID) and WHISPER_WAKE_MODEL (a cheap always-on wake-word probe, see the "Wake
 word" section below).
 """
 
-import asyncio
 import inspect
 import io
 import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
 from contextlib import asynccontextmanager
 from difflib import get_close_matches
 from pathlib import Path
@@ -56,7 +53,7 @@ def _resolved(value: str) -> str:
 
 
 # large-v3 Persian fine-tune -- heavier than the old small-persian default (see
-# CLAUDE.md's WER/vetting note), chosen anyway because accuracy is the point.
+# AGENTS.md's WER/vetting note), chosen anyway because accuracy is the point.
 FA_MODEL = _resolved(os.getenv("WHISPER_FA_MODEL", str(MODELS_DIR / "whisper-large-v3-persian-khosravi-ct2")))
 # Official Systran CT2, English-only by construction -- no conversion step,
 # and no detect_language() either, see pick_model_and_language().
@@ -136,49 +133,6 @@ MIN_CLIP_BYTES = 2000
 SAVE_CLIPS = os.getenv("WHISPER_SAVE_CLIPS", "").lower() in ("1", "true", "yes")
 SAMPLES_DIR = Path(os.getenv("WHISPER_SAMPLES_DIR", "./eval/samples"))
 
-# Optional: mirror each transcript to a paired PC's /api/external/messages
-# (same Wi-Fi network) -- see .env.example. Empty host disables the push
-# outright, no network hop attempted.
-EXTERNAL_API_HOST = os.getenv("EXTERNAL_API_HOST", "")
-EXTERNAL_API_PORT = os.getenv("EXTERNAL_API_PORT", "8000")
-EXTERNAL_API_URL = (f"http://{EXTERNAL_API_HOST}:{EXTERNAL_API_PORT}/api/external/messages"
-                    if EXTERNAL_API_HOST else None)
-# The nav service resolves through an LLM (+ MCP calls), so this needs real
-# headroom -- 5s was timing out requests the other side went on to answer,
-# which read here as "unreachable" when it was actually just slow.
-EXTERNAL_API_TIMEOUT = int(os.getenv("EXTERNAL_API_TIMEOUT", "30"))
-
-
-def _post_external(text: str) -> dict:
-    """Blocking POST + the nav service's own contract for reporting failure:
-    business-logic outcomes (ambiguous/not_found/insufficient_context) come
-    back as HTTP 200 and are not errors here; a 503 means one of *its*
-    dependencies (model/registry/DB) is down and carries {"detail": ...}."""
-    body = json.dumps({"text": text}).encode()
-    req = urllib.request.Request(EXTERNAL_API_URL, data=body, method="POST",
-                                 headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=EXTERNAL_API_TIMEOUT) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        detail = json.loads(exc.read()).get("detail", exc.reason)
-        raise RuntimeError(detail) from exc
-
-
-async def push_external(text: str) -> tuple[dict | None, str | None]:
-    """Best-effort call to the paired PC's /api/external/messages. Returns
-    (parsed response, None) on success or (None, error string) on any
-    failure -- never raises, so the GUI keeps showing the transcript even
-    when the other machine is off, unreachable, or 503s."""
-    if not EXTERNAL_API_URL:
-        return None, None
-    try:
-        return await asyncio.to_thread(_post_external, text), None
-    except Exception as exc:
-        print(f"[warn] external push to {EXTERNAL_API_URL} failed: {exc}")
-        return None, str(exc)
-
-
 def save_clip(raw: bytes, filename: str | None) -> None:
     """Best-effort: a failed debug write must never cost someone a transcript."""
     try:
@@ -196,7 +150,7 @@ for _path, _var in ((FA_MODEL, "WHISPER_FA_MODEL"), (EN_MODEL, "WHISPER_EN_MODEL
         sys.exit(
             f"{_path!r} ({_var}) is not a directory on disk.\n"
             "This service never downloads weights at runtime. Build/fetch it with the "
-            "matching scripts/convert_*.sh or scripts/fetch_*.sh (see CLAUDE.md), or "
+            "matching scripts/convert_*.sh or scripts/fetch_*.sh (see AGENTS.md), or "
             f"point {_var} at an existing CT2 model directory."
         )
 
@@ -207,7 +161,7 @@ if Path(DETECT_MODEL).name.endswith(".en"):
     sys.exit(
         f"{DETECT_MODEL!r} (WHISPER_DETECT_MODEL) is English-only, so it has no "
         "detect_language() to call.\nPoint WHISPER_DETECT_MODEL at a multilingual "
-        "model -- whisper-small-persian-ct2 is the default and the measured choice."
+        "model -- whisper-large-v3-turbo-ct2 is the default."
     )
 
 # The wake word has Persian spellings too -- an English-only model here would
@@ -556,23 +510,10 @@ async def transcribe(request: Request, audio: UploadFile = File(...),
         # Always-on mode: a clip without the name is a normal, expected outcome,
         # so it is a 200 with woken=false rather than an error the UI must dodge.
         command = wake_command(text)
-        nav, push_error = await push_external(command) if command else (None, None)
-        result = {"text": command or "", "woken": command is not None, **answer}
-        if nav is not None:
-            result |= {"nav_status": nav.get("status"), "nav_url": nav.get("url"),
-                      "nav_message": nav.get("message")}
-        if push_error is not None:
-            result["external_error"] = push_error
-        return result
+        return {"text": command or "", "woken": command is not None, **answer}
 
     if not text:
         raise HTTPException(422, "no_speech")
-    nav, push_error = await push_external(text)
-    if nav is not None:
-        answer |= {"nav_status": nav.get("status"), "nav_url": nav.get("url"),
-                  "nav_message": nav.get("message")}
-    if push_error is not None:
-        answer["external_error"] = push_error
     return {"text": text, **answer}
 
 

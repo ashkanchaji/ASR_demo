@@ -57,10 +57,6 @@
   #transcript { font-size: 1.3rem; }
   #meta { margin-top: 14px; color: var(--muted); font-size: .85rem; }
   #error { border-left: 4px solid var(--live); }
-  #syncError { margin-top: 8px; color: var(--busy); font-size: .85rem; }
-  #navNote { margin-top: 8px; font-size: .85rem; }
-  #navNote[data-kind="ok"] { color: var(--ok); }
-  #navNote[data-kind="warn"] { color: var(--busy); }
 
   .controls {
     width: min(560px, 100%); display: flex; flex-wrap: wrap; justify-content: center;
@@ -121,8 +117,6 @@
        English LTR, and mixed strings follow whichever opens the sentence. -->
   <div id="transcript" dir="auto"></div>
   <div id="meta"></div>
-  <div id="navNote" hidden></div>
-  <div id="syncError" hidden></div>
 </div>
 
 <div class="card" id="error" role="alert" hidden></div>
@@ -141,8 +135,7 @@
 const $ = (s) => document.querySelector(s);
 const mic = document.getElementById("mic");
 const ring = $("#ring"), statusEl = $("#status"), label = $("#label");
-const result = $("#result"), transcript = $("#transcript"), meta = $("#meta"), syncError = $("#syncError");
-const navNote = $("#navNote");
+const result = $("#result"), transcript = $("#transcript"), meta = $("#meta");
 const errorBox = $("#error"), stopBtn = $("#stop");
 const wakeBox = $("#wake"), faModelSel = $("#faModel"), enModelSel = $("#enModel"), langSel = $("#lang");
 
@@ -151,7 +144,8 @@ const MAX_MS = 5000;       // hard cap, in case the room never goes quiet
 const WAKE_COMMAND_MS = 5000;  // hard cap on the clip right after "hey PUM", talking or not
 const WAKE_SILENCE_MS = 1500;  // that same clip stops sooner on a shorter pause than SILENCE_MS
 const MIN_RMS = 0.012;      // floor under the adaptive threshold
-const CALIBRATE_MS = 300;   // opening window used to measure the room
+const FLOOR_FRAMES = 600;   // ~10s of level history, long enough to span speech and the pauses in it
+const FLOOR_PCTL = 0.2;     // 20th percentile of that history is the room
 const IDLE_MS = 4000;       // always-on: dead silence this long -> recycle the clip
 
 const COPY = {
@@ -206,6 +200,26 @@ function cleanup() {
   stream = null;
 }
 
+// Level history, deliberately outside watchLevel() so it survives the always-on
+// loop's constant restarts. Measuring the room fresh inside each clip is what
+// broke always-on: a clip that opens on speech -- the normal case, since that is
+// when someone says "hey PUM" -- made the speaker's own voice the room floor,
+// put the threshold above their own peak, and the clip was dropped client-side
+// with no request and nothing on screen.
+let rmsLog = [];
+
+// 20th percentile, not a mean: a burst of speech inside the window cannot drag a
+// percentile up to meet itself the way it drags an average.
+function roomFloor() {
+  // Under a second of history cannot tell a room from a sentence, so don't try:
+  // 0 means MIN_RMS decides. Guessing high here is the failure that has no
+  // symptom -- the clip is dropped before the request, so nothing reaches the
+  // screen. Guessing low costs one pass of the tiny wake probe.
+  if (rmsLog.length < FLOOR_FRAMES / 10) return 0;
+  const sorted = [...rmsLog].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length * FLOOR_PCTL)];
+}
+
 // Energy-threshold VAD. A library would buy speech/non-speech classification we
 // don't need here -- the server runs a real VAD; this only decides when to stop.
 function watchLevel(src) {
@@ -217,7 +231,7 @@ function watchLevel(src) {
 
   const t0 = performance.now();
   sawSpeech = false;
-  let floorSum = 0, floorN = 0, heardSpeech = false, lastLoud = 0;
+  let heardSpeech = false, lastLoud = 0, threshold = MIN_RMS;
   // armed is false only for the clip right after "hey PUM" -- the command
   // itself: a hard 3s cap regardless of continued speech, and it stops on a
   // shorter pause too, instead of the general-purpose 15s/1.5s pair.
@@ -234,9 +248,14 @@ function watchLevel(src) {
     const now = performance.now();
 
     // Calibrate against the actual room. A fan, an open window or a cheap laptop
-    // mic all sit well above the silence a fixed threshold assumes.
-    if (now - t0 < CALIBRATE_MS) { floorSum += rms; floorN++; return; }
-    const threshold = Math.max(MIN_RMS, (floorSum / Math.max(floorN, 1)) * 3);
+    // mic all sit well above the silence a fixed threshold assumes. There is no
+    // blind opening window any more: speech in the first 300ms of a clip used to
+    // be invisible to this loop, and that is exactly where the wake word lands.
+    rmsLog.push(rms);
+    if (rmsLog.length > FLOOR_FRAMES) rmsLog.shift();
+    // Frozen for the rest of the clip once speech starts, so mid-sentence
+    // loudness cannot redefine what counts as silence partway through a sentence.
+    if (!heardSpeech) threshold = Math.max(MIN_RMS, roomFloor() * 3);
 
     mic.style.transform = `scale(${1 + Math.min(rms * 3, 0.12)})`;  // live level
 
@@ -283,9 +302,7 @@ function stop() {
 
 // Always-on is a loop of ordinary push-to-talk clips: the browser VAD cuts each
 // one and the server decides whether the name was at the front of it.
-// ponytail: that means one full Whisper pass per clip, so always-on wants the
-// small model on CPU. A dedicated wake-word model is the upgrade if it stops
-// keeping up.
+// A tiny server-side wake probe filters clips before the full transcription pass.
 function next() {
   setState("idle");
   if (wakeBox.checked) setTimeout(start, 200);
@@ -375,22 +392,6 @@ function render(d) {
   transcript.lang = d.detected_language;
   const language = LANGUAGES[d.detected_language] ?? d.detected_language;
   meta.textContent = `${language} · heard in ${(d.processing_time_ms / 1000).toFixed(1)}s`;
-
-  syncError.hidden = !d.external_error;
-  syncError.textContent = d.external_error ? "Couldn't reach the other device on your network." : "";
-
-  // nav_* comes from the paired PC's own response -- status=ok carries a url,
-  // anything else carries a human-readable message already meant for a user.
-  navNote.hidden = true;
-  if (d.nav_status === "ok" && d.nav_url) {
-    navNote.hidden = false;
-    navNote.dataset.kind = "ok";
-    navNote.textContent = d.nav_url;
-  } else if (d.nav_message) {
-    navNote.hidden = false;
-    navNote.dataset.kind = "warn";
-    navNote.textContent = d.nav_message;
-  }
 }
 
 mic.addEventListener("click", () => {

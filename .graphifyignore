@@ -1,0 +1,13 @@
+.git/
+.venv/
+.venv-convert/
+.claude/
+.codex/
+.agents/
+models/
+__pycache__/
+.env
+.env.*
+!.env.example
+eval/samples/
+graphify-out/

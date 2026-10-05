@@ -7,3 +7,9 @@ __pycache__/
 **/__pycache__/
 .git/
 *.md
+.claude/
+.codex/
+.agents/
+eval/samples/
+graphify-out/
+.env.*
